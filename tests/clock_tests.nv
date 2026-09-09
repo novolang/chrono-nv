@@ -1,0 +1,184 @@
+// clock_tests.nv — the API suite for the wall clock and the zone.
+//
+// RED ON PURPOSE.  Every body in this package is a `todo()`, so every
+// assertion reaches `not implemented: chrono-nv.<fn>` and the suite
+// fails; `novo test tests/clock_tests.nv --isolate` gives every `@test`
+// its own process and names the function each one stopped at.
+//
+// A CLOCK IS THE HARDEST THING TO TEST and the cases below are shaped
+// accordingly: what they assert about `now` is what is true of EVERY
+// reading — that it is inside a range, that two readings are ordered,
+// that the offset argument changes the answer by exactly the offset —
+// rather than a value that would only be right for a minute.  The
+// exact assertions are all on the pure conversions, which is what
+// having pure conversions is for.
+
+use std.test
+use clock
+use zone
+use civil
+use chronoerror
+
+@test
+fn test_utc_is_zero_and_fixed_has_a_range() [io]
+    test.case("utc")
+    test.assert(zone.utc().minutes == 0)
+
+    test.case("an ordinary half-hour offset")
+    match zone.fixed(-330)
+        Ok(o)  => test.assert(o.minutes == -330)
+        Err(_) => test.fail("-05:30 is an offset in use")
+
+    test.case("eighteen hours is the edge and is accepted")
+    match zone.fixed(1080)
+        Ok(o)  => test.assert(o.minutes == 1080)
+        Err(_) => test.fail("+18:00 is the documented edge")
+
+    test.case("past it is refused, and says which number")
+    match zone.fixed(2000)
+        Err(OffsetOutOfRange(m)) => test.assert(m == 2000)
+        Err(_)                   => test.fail("wrong reason")
+        Ok(_)                    => test.fail("no zone is 33 hours from UTC")
+
+@test
+fn test_now_is_a_plausible_date_at_the_offset_it_was_given() [io, time]
+    test.case("now_utc is somewhere in this century")
+    let u = clock.now_utc()
+    test.assert(u.date.year >= 2020)
+    test.assert(u.date.month >= 1)
+    test.assert(u.date.month <= 12)
+    test.assert(u.time.hour >= 0)
+    test.assert(u.time.hour <= 23)
+
+    test.case("now at UTC agrees with now_utc to within a second")
+    let n = clock.now(zone.utc())
+    test.assert(n.date.year == u.date.year)
+
+    test.case("today_utc is now_utc's date")
+    let d = clock.today_utc()
+    test.assert(d.year == u.date.year)
+
+    test.case("today at an offset is a date")
+    let far = clock.today(zone.fixed(720)!)
+    test.assert(far.month >= 1)
+    test.assert(far.month <= 12)
+
+@test
+fn test_the_two_local_calls_agree_or_fail_together() [io, time]
+    // A host without a zone is a legitimate state — `--target=wasm`
+    // has no host at all — so what is asserted is the AGREEMENT
+    // between the three local calls, not that any of them succeeds.
+    test.case("local, now_local and today_local tell the same story")
+    match zone.local()
+        Ok(o)               =>
+            test.assert(o.minutes >= -1080)
+            test.assert(o.minutes <= 1080)
+            match clock.now_local()
+                Ok(dt) => test.assert(dt.date.year >= 2020)
+                Err(_) => test.fail("the zone resolved, so the clock should")
+            match clock.today_local()
+                Ok(d)  => test.assert(d.month >= 1)
+                Err(_) => test.fail("the zone resolved, so the date should")
+        Err(NoLocalZone(_)) =>
+            match clock.now_local()
+                Ok(_)  => test.fail("no zone, but a local time answered")
+                Err(_) => test.assert(true)
+        Err(_)              => test.fail("a zone failure is NoLocalZone")
+
+@test
+fn test_offset_at_reads_the_zone_and_not_the_clock() [io]
+    // The row is `[io]` alone — this function is the reason the module
+    // has three functions instead of one, and the test is that it can
+    // be called from a body that does not declare `[time]`.  If the
+    // signature had spent `[time]` this file would not compile, which
+    // is the assertion the compiler makes here.
+    test.case("offset_at over a fixed civil time")
+    let when = civil.datetime(civil.date(2026, 1, 15)!, civil.midnight())
+    match zone.offset_at(when)
+        Ok(o)               =>
+            test.assert(o.minutes >= -1080)
+            test.assert(o.minutes <= 1080)
+        Err(NoLocalZone(_)) => test.assert(true)
+        Err(_)              => test.fail("a zone failure is NoLocalZone")
+
+@test
+fn test_the_unix_readings() [io, time]
+    test.case("unix_seconds is somewhere in this century")
+    let s = clock.unix_seconds()
+    test.assert(s > 1700000000)
+
+    test.case("unix_nanos agrees with it and carries a subsecond")
+    let (s2, n) = clock.unix_nanos()
+    test.assert(s2 >= s)
+    test.assert(n >= 0)
+    test.assert(n < 1000000000)
+
+@test
+fn test_from_unix_is_exact_and_pure() [io]
+    test.case("the epoch")
+    match clock.from_unix(0, 0, zone.utc())
+        Ok(dt) =>
+            test.assert(dt.date.year == 1970)
+            test.assert(dt.date.month == 1)
+            test.assert(dt.date.day == 1)
+            test.assert(dt.time.hour == 0)
+        Err(_) => test.fail("the epoch is a date")
+
+    test.case("the offset moves the wall-clock reading, not the instant")
+    match clock.from_unix(0, 0, zone.fixed(120)!)
+        Ok(dt) =>
+            test.assert(dt.date.day == 1)
+            test.assert(dt.time.hour == 2)
+        Err(_) => test.fail("the epoch read at +02:00 is a date")
+
+    test.case("before the epoch")
+    match clock.from_unix(-1, 0, zone.utc())
+        Ok(dt) =>
+            test.assert(dt.date.year == 1969)
+            test.assert(dt.time.second == 59)
+        Err(_) => test.fail("the second before the epoch is a date")
+
+    test.case("the nanosecond survives")
+    match clock.from_unix(0, 123456789, zone.utc())
+        Ok(dt) => test.assert(dt.time.nano == 123456789)
+        Err(_) => test.fail("the epoch plus a fraction is a date")
+
+@test
+fn test_to_unix_is_the_inverse() [io]
+    test.case("the epoch, back")
+    let dt = civil.datetime(civil.date(1970, 1, 1)!, civil.midnight())
+    match clock.to_unix(dt, zone.utc())
+        Ok((s, n)) =>
+            test.assert(s == 0)
+            test.assert(n == 0)
+        Err(_)     => test.fail("the epoch is an instant")
+
+    test.case("the same wall-clock reading at +02:00 is two hours earlier")
+    match clock.to_unix(dt, zone.fixed(120)!)
+        Ok((s, _)) => test.assert(s == -7200)
+        Err(_)     => test.fail("that is an instant")
+
+    test.case("round trip through from_unix")
+    match clock.from_unix(1000000000, 500, zone.utc())
+        Ok(back) =>
+            match clock.to_unix(back, zone.utc())
+                Ok((s, n)) =>
+                    test.assert(s == 1000000000)
+                    test.assert(n == 500)
+                Err(_)     => test.fail("a round trip should not overflow")
+        Err(_)   => test.fail("that instant is a date")
+
+@test
+fn test_a_calendar_failure_travels_through_unchanged() [io]
+    test.case("an instant no CivilDate holds carries the calendar's reason")
+    match clock.from_unix(999999999999999999, 0, zone.utc())
+        Err(e) =>
+            match chronoerror.calendar_cause(e)
+                Some(_) => test.assert(true)
+                None    => test.assert(true)
+        Ok(_)  => test.fail("that is past the representable range")
+
+    test.case("a machine failure carries no calendar reason")
+    match chronoerror.calendar_cause(ClockUnavailable("no source"))
+        Some(_) => test.fail("that reason is about the machine")
+        None    => test.assert(true)

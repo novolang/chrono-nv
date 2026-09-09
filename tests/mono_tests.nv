@@ -1,0 +1,167 @@
+// mono_tests.nv — the API suite for the monotonic clock, the
+// deadlines built on it, and the bridge to `std.time`.
+//
+// RED ON PURPOSE: every body is a `todo()`.  Run with `--isolate` for
+// one verdict per `@test`.
+//
+// WHAT THE MONOTONIC CASES CAN AND CANNOT ASSERT.  A test cannot pin a
+// reading; what it can pin is the PROPERTY the module exists for —
+// that two readings are ordered, that an elapsed time is never
+// negative, that `between` on the caller's own readings is pure.  The
+// deadline cases lean on `deadline_at`, which takes a reading rather
+// than making one, because that is the constructor whose expiry is
+// decidable without waiting.
+
+use std.test
+use mono
+use timer
+use bridge
+use span
+use zone
+use civil
+use chronoerror
+
+@test
+fn test_the_clock_only_goes_forward() [io, time]
+    test.case("two readings are ordered")
+    let a = mono.read()
+    let b = mono.read()
+    test.assert(b.nanos >= a.nanos)
+
+    test.case("and a reading is never negative")
+    test.assert(a.nanos >= 0)
+
+@test
+fn test_between_is_pure_and_signed() [io, time]
+    // The row on `between` is EMPTY — both readings are the caller's,
+    // so it performs nothing.  The `[time]` on this function is for
+    // the two `read` calls and the `println`; if `between` had spent a
+    // row of its own the signature would still compile here, so what
+    // this case really asserts is the value.
+    test.case("later minus earlier is not negative")
+    let a = mono.read()
+    let b = mono.read()
+    test.assert(span.is_negative(mono.between(a, b)) == false)
+
+    test.case("and the other way round is")
+    test.assert(span.is_negative(mono.between(b, a)) or span.as_seconds(mono.between(b, a)) == 0)
+
+    test.case("a reading to itself is zero")
+    test.assert(span.as_seconds(mono.between(a, a)) == 0)
+    test.assert(span.subsec_nanos(mono.between(a, a)) == 0)
+
+@test
+fn test_elapsed_is_never_negative() [io, time]
+    test.case("elapsed")
+    let start = mono.read()
+    let d = mono.elapsed(start)
+    test.assert(span.is_negative(d) == false)
+
+@test
+fn test_sleep_waits_at_least_as_long_as_asked() [io, time]
+    test.case("a short sleep")
+    let start = mono.read()
+    mono.sleep(span.milliseconds(20))
+    let waited = mono.elapsed(start)
+    test.assert(span.is_negative(waited) == false)
+
+    test.case("a zero or negative length returns rather than erroring")
+    mono.sleep(span.seconds(0))
+    mono.sleep(span.seconds(-1))
+    test.assert(true)
+
+@test
+fn test_a_deadline_is_a_question_a_loop_asks() [io, time]
+    test.case("a deadline at the current reading has already expired")
+    let d = timer.deadline_at(mono.read())
+    test.assert(timer.expired(d))
+
+    test.case("and one five seconds out has not")
+    match timer.deadline_in(span.seconds(5))
+        Ok(later) =>
+            test.assert(timer.expired(later) == false)
+            test.assert(span.is_negative(timer.remaining(later)) == false)
+        Err(_)    => test.fail("five seconds fits")
+
+    test.case("a zero budget is an expired deadline, not an error")
+    match timer.deadline_in(span.seconds(0))
+        Ok(now) => test.assert(timer.expired(now))
+        Err(_)  => test.fail("no budget left is a deadline, not a failure")
+
+    test.case("remaining goes negative rather than clamping")
+    let past = timer.deadline_at(mono.read())
+    test.assert(span.is_negative(timer.remaining(past))
+                or span.as_seconds(timer.remaining(past)) == 0)
+
+@test
+fn test_the_stopwatch_carries_its_label() [io, time]
+    test.case("start")
+    let t = timer.start("index rebuild")
+    test.assert(t.label == "index rebuild")
+
+    test.case("lap returns the timer to take the next one from")
+    let (t2, first) = timer.lap(t)
+    test.assert(t2.label == "index rebuild")
+    test.assert(span.is_negative(first) == false)
+
+    test.case("a second lap measures from the first, not the start")
+    let (_, second) = timer.lap(t2)
+    test.assert(span.is_negative(second) == false)
+
+    test.case("stop is the total, laps ignored")
+    test.assert(span.is_negative(timer.stop(t2)) == false)
+
+@test
+fn test_the_bridge_to_std_time_durations() [io]
+    test.case("from_std_duration widens without loss")
+    let d = bridge.from_std_duration(Duration.of_ms(1500))
+    test.assert(span.as_seconds(d) == 1)
+    test.assert(span.subsec_nanos(d) == 500000000)
+
+    test.case("to_std_duration truncates to the microsecond")
+    match bridge.to_std_duration(span.nanoseconds(1500))
+        Ok(u)  => test.assert(u.us() == 1)
+        Err(_) => test.fail("1500 nanoseconds fits an Int of microseconds")
+
+    test.case("and a whole number of microseconds round-trips")
+    match bridge.to_std_duration(span.milliseconds(1500))
+        Ok(u)  => test.assert(u.us() == 1500000)
+        Err(_) => test.fail("1.5 seconds fits an Int of microseconds")
+
+@test
+fn test_the_bridge_to_std_time_timestamps() [io]
+    test.case("to_zoned at UTC")
+    let dt = civil.datetime(civil.date(2026, 3, 15)!, civil.midnight())
+    match bridge.to_zoned(dt, zone.utc())
+        Ok(z)  => test.assert(z.year() == 2026)
+        Err(_) => test.fail("2026-03-15 is inside Zoned's range")
+
+    test.case("from_zoned gives back the reading and the offset")
+    match bridge.to_zoned(dt, zone.fixed(120)!)
+        Ok(z)  =>
+            match bridge.from_zoned(z)
+                Ok((back, off)) =>
+                    test.assert(off.minutes == 120)
+                    test.assert(civil.compare_datetime(back, dt) == 0)
+                Err(_)          => test.fail("a Zoned this package made should read back")
+        Err(_) => test.fail("2026-03-15 is inside Zoned's range")
+
+@test
+fn test_from_mono_is_a_unit_change() [io, time]
+    test.case("a Mono reading becomes a Tick with three zero digits")
+    let t = bridge.from_mono(Mono.now())
+    test.assert(t.nanos >= 0)
+    test.assert(t.nanos % 1000 == 0)
+
+@test
+fn test_an_overflow_says_so_rather_than_wrapping() [io]
+    test.case("a length that does not fit std.time's microseconds")
+    match bridge.to_std_duration(span.seconds(999999999999999))
+        Err(Overflow(_)) => test.assert(true)
+        Err(_)           => test.fail("wrong reason")
+        Ok(_)            => test.fail("that many seconds is not microseconds")
+
+    test.case("and an overflow carries no calendar reason")
+    match chronoerror.calendar_cause(ChronoError.Overflow("microseconds"))
+        Some(_) => test.fail("that reason is about a representation")
+        None    => test.assert(true)

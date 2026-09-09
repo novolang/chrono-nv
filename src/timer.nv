@@ -1,0 +1,178 @@
+// timer.nv — a deadline you can ask, and a stopwatch you can read.
+//
+// BOTH ARE OVER THE MONOTONIC CLOCK, without exception.  A deadline
+// built on the wall clock expires early or late whenever NTP steps it,
+// and the failure is a request that times out at three in the morning
+// on the day the clocks change.  So a `Deadline` is a `Tick` and
+// nothing else, and there is no constructor here that takes a
+// `CivilDateTime` — a caller who genuinely means "at 09:00 tomorrow"
+// is scheduling, not timing out, and wants a difference from
+// `clock.now(at)` converted into a length first.
+//
+// WHY A DEADLINE IS A VALUE AND NOT A CALLBACK
+//
+// Because a `core`-shaped design has no callbacks in it and this
+// package would rather be shaped the same way where it can: `expired`
+// is a question a loop asks, `remaining` is a number a transport hands
+// to a `poll`, and neither needs this package to own a thread.  The
+// async story belongs to `timer-nv` on the plan, and this is the
+// synchronous half that everything else can already use.
+//
+// A `Timer` IS FOR OUTPUT A PERSON READS.  It carries a label because
+// the thing a caller does with a stopwatch is print it, and passing
+// the label separately at every `stop` is how the label ends up
+// disagreeing with the measurement.
+
+use mono
+
+// A point on the monotonic clock, after which something should stop
+// waiting.
+//
+// ```novo
+// use timer
+// use span
+//
+// fn main() [io, time]
+//     match timer.deadline_in(span.seconds(5))
+//         Ok(d)  => println("${timer.expired(d)}")            // false
+//         Err(_) => println("overflow")
+// ```
+pub struct Deadline
+    // The monotonic reading at which this expires.
+    at: Tick
+
+// A deadline a length of time from now.
+//
+// `Overflow` when the length does not fit past the current reading,
+// which for a `TimeDelta` built from seconds means the caller asked
+// for a wait of about 292 years.
+//
+// A zero or negative length gives a deadline that has already expired,
+// which is the right answer rather than an error: it is what a caller
+// who computed a remaining budget and found none should get.
+//
+// ```novo
+// use timer
+// use span
+//
+// fn budget() -> Result<Deadline, ChronoError> [time]
+//     timer.deadline_in(span.milliseconds(250))
+// ```
+pub fn deadline_in(d: TimeDelta) -> Result<Deadline, ChronoError> [time]
+    todo("chrono-nv.deadline_in")
+
+// A deadline at a monotonic reading the caller already has.
+//
+// PURE.  It is the constructor a test uses — a `Tick` from `mono.read`
+// plus a known offset makes a deadline whose expiry is decidable
+// without waiting — and the one a caller who is already holding a
+// reading should use.
+//
+// ```novo
+// use timer
+// use mono
+//
+// fn main() [io, time]
+//     let d = timer.deadline_at(mono.read())
+//     println("${timer.expired(d)}")              // true — it is now
+// ```
+pub fn deadline_at(t: Tick) -> Deadline
+    todo("chrono-nv.deadline_at")
+
+// Whether the deadline has passed.
+//
+// ```novo
+// use timer
+// use span
+//
+// fn main() [io, time]
+//     let d = timer.deadline_in(span.seconds(5))!
+//     println("${timer.expired(d)}")              // false
+// ```
+pub fn expired(d: Deadline) -> Bool [time]
+    todo("chrono-nv.expired")
+
+// How long is left, or a negative length if the deadline has passed.
+//
+// Negative rather than zero, because "how late are we" is a thing a
+// caller logs and a clamp to zero throws it away.  A transport that
+// wants a poll timeout takes `magnitude` of it or treats a negative
+// length as "do not wait".
+//
+// ```novo
+// use timer
+// use span
+//
+// fn main() [io, time]
+//     let d = timer.deadline_in(span.seconds(5))!
+//     println("${span.is_negative(timer.remaining(d))}")      // false
+// ```
+pub fn remaining(d: Deadline) -> TimeDelta [time]
+    todo("chrono-nv.remaining")
+
+// A stopwatch, with the name of what it is timing.
+//
+// ```novo
+// use timer
+//
+// fn main() [io, time]
+//     let t = timer.start("parse")
+//     println(t.label)                            // parse
+// ```
+pub struct Timer
+    // What is being timed.  It travels with the measurement so that a
+    // report cannot pair the wrong two.
+    label: Str
+    // The monotonic reading it was started at.
+    started: Tick
+    // The reading the last `lap` was taken at, or `started`.
+    lapped: Tick
+
+// A stopwatch, started now.
+//
+// ```novo
+// use timer
+//
+// fn main() [io, time]
+//     let t = timer.start("index rebuild")
+//     println(t.label)
+// ```
+pub fn start(label: Str) -> Timer [time]
+    todo("chrono-nv.start")
+
+// The time since the last lap, and a timer to take the next one from.
+//
+// Threaded rather than mutated — `[mutate]` is a real effect and this
+// package would rather not spend one on a stopwatch — so a caller keeps
+// the returned `Timer`.  The first lap measures from the start.
+//
+// ```novo
+// use timer
+// use span
+//
+// fn main() [io, time]
+//     let t = timer.start("phases")
+//     let (t2, first) = timer.lap(t)
+//     println("${span.as_seconds(first)}")
+//     let (_, second) = timer.lap(t2)
+//     println("${span.as_seconds(second)}")
+// ```
+pub fn lap(t: Timer) -> (Timer, TimeDelta) [time]
+    todo("chrono-nv.lap")
+
+// The total time since the timer was started, laps ignored.
+//
+// It does not print, and there is no variant of it that does: a
+// library returns the measurement and the program decides whether it
+// appears on a console.
+//
+// ```novo
+// use timer
+// use span
+//
+// fn main() [io, time]
+//     let t = timer.start("total")
+//     println("${span.as_seconds(timer.stop(t))}")
+// ```
+pub fn stop(t: Timer) -> TimeDelta [time]
+    todo("chrono-nv.stop")

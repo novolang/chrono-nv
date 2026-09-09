@@ -1,0 +1,124 @@
+// zone.nv — an offset from UTC, and the two different questions about
+// where it comes from.
+//
+// AN OFFSET IS NOT A ZONE, and this package does not pretend otherwise.
+// `+02:00` is a number; "Europe/Copenhagen" is a set of political rules
+// that change several times a year and that no program should carry a
+// stale copy of.  `std.time`'s page argues the same case at length and
+// ships fixed offsets only; `tz-nv` is the row on the plan for the rule
+// database, and when it lands it will produce `Offset` values for a
+// zone and an instant — which is this type, and this is why it is a
+// type and not a bare `Int`.
+//
+// THE TWO ROWS ARE THE POINT OF THIS MODULE
+//
+//     fn utc()      -> Offset                                  no row
+//     fn offset_at(when) -> … [io]      reads the host's zone
+//     fn local()    -> … [time, io]     …at the current instant
+//
+// `[io]` because SPEC § 5.1 puts the environment under `[io]` and the
+// host's zone is read from it.  `[time]` on top of that for `local`,
+// because "what is the offset RIGHT NOW" is a question about an
+// instant, and under a daylight-saving rule the answer changes twice a
+// year.  `offset_at` does not read the clock: the caller supplies the
+// instant, so it is the call to reach for from a test, and it is the
+// call a caller in a sandbox that grants `[io]` and not `[time]` can
+// still make.
+//
+// Splitting them is the whole reason this is three functions instead of
+// one.  A library that offered only `local()` would charge `[time]` to
+// a caller who has an instant already and only wants it translated.
+
+// Minutes east of UTC.
+//
+// `120` is `+02:00`, `-330` is `-05:30`, `0` is `Z`.  Minutes and not
+// seconds because every offset in use is a whole number of minutes and
+// RFC 3339 cannot write anything else; minutes and not hours because
+// half-hour and three-quarter-hour offsets are ordinary.
+//
+// ```novo
+// use zone
+//
+// fn main() [io]
+//     println("${zone.utc().minutes}")            // 0
+// ```
+pub struct Offset
+    // Minutes east of UTC, in `-1080 ..= 1080`.
+    minutes: Int
+
+// `Z` — zero minutes.
+//
+// The fallback a program uses when `local()` says there is no zone, and
+// the offset a program that logs in UTC uses on purpose.
+//
+// ```novo
+// use zone
+//
+// fn main() [io]
+//     println("${zone.utc().minutes}")            // 0
+// ```
+pub fn utc() -> Offset
+    todo("chrono-nv.utc")
+
+// An offset a caller already knows, or the reason it is not one.
+//
+// `OffsetOutOfRange` past eighteen hours either way, which is where
+// RFC 3339 and every zone database stop.
+//
+// ```novo
+// use zone
+//
+// fn main() [io]
+//     match zone.fixed(-330)
+//         Ok(o)  => println("${o.minutes}")       // -330
+//         Err(_) => println("not an offset")
+// ```
+pub fn fixed(minutes: Int) -> Result<Offset, ChronoError>
+    todo("chrono-nv.fixed")
+
+// The offset the HOST's zone had at a given civil time.
+//
+// `[io]` and nothing more: the zone comes from the environment, the
+// instant comes from the caller, and no clock is read.  That is what
+// makes this the call a test uses — it is deterministic given its
+// argument — and the call `local()` is written in terms of.
+//
+// A civil time inside a daylight-saving transition is ambiguous (it
+// happens twice) or does not exist (it is skipped).  This returns the
+// offset in effect BEFORE the transition in both cases, which is the
+// reading `mktime` takes with `tm_isdst = 0` and the one that makes
+// `offset_at` total.  A caller who needs to know that the time was
+// ambiguous needs a zone database, and that is `tz-nv`.
+//
+// ```novo
+// use zone
+// use civil
+//
+// fn winter() -> Result<Offset, ChronoError> [io]
+//     // `civil.date` refuses in the calendar's own words, and this
+//     // function answers in chrono's, so the reason is carried across
+//     // rather than propagated with `!`.
+//     match civil.date(2026, 1, 15)
+//         Err(e) => Err(ChronoError.Calendar(e))
+//         Ok(d)  => zone.offset_at(civil.datetime(d, civil.midnight()))
+// ```
+pub fn offset_at(when: CivilDateTime) -> Result<Offset, ChronoError> [io]
+    todo("chrono-nv.offset_at")
+
+// The host's offset right now.
+//
+// `[time, io]` — the clock for "now", the environment for the zone.
+// `NoLocalZone` when there is nothing to read or nothing readable, and
+// a program that can carry on says so in its output and falls back to
+// `utc()` rather than guessing.
+//
+// ```novo
+// use zone
+//
+// fn main() [io, time]
+//     match zone.local()
+//         Ok(o)  => println("offset ${o.minutes}")
+//         Err(_) => println("no local zone; using UTC")
+// ```
+pub fn local() -> Result<Offset, ChronoError> [time, io]
+    todo("chrono-nv.local")

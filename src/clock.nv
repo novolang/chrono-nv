@@ -1,0 +1,190 @@
+// clock.nv — the wall clock, and the epoch it is counted from.
+//
+// THE WALL CLOCK IS NOT MONOTONIC.  It can go backwards: NTP steps it,
+// a person sets it, a virtual machine resumes from a snapshot.  So
+// every function here is for the question "what does the calendar say"
+// and NONE of them is for "how long did that take" — that is `mono`,
+// and the two are separate modules rather than separate functions
+// because the mistake this prevents is reaching for the nearest thing
+// called `now`.
+//
+// EVERY WALL-CLOCK CALL TAKES AN OFFSET, or is named for the one it
+// assumes.  `now_utc()` is honest about assuming UTC; `now(at)` takes
+// the offset the caller decided on; `now_local()` asks the host and
+// carries the `[io]` that reading the environment costs.  There is no
+// bare `now()`, because a civil date-time with no zone attached and no
+// zone named is the value that produces off-by-an-hour bugs in the
+// week after a clock change.
+//
+// THE CONVERSIONS ARE PURE, and they live here rather than in
+// `calendar-nv` because they need an `Offset`, which is this package's
+// type: a Unix second is an instant, a `CivilDateTime` is a wall-clock
+// reading, and turning one into the other is exactly the step that
+// needs to know which wall.
+
+use zone
+
+// The civil date-time at UTC, right now.
+//
+// ```novo
+// use clock
+// use iso8601
+//
+// fn stamp() -> Str [time]
+//     iso8601.format_rfc3339(clock.now_utc(), 0)
+// ```
+pub fn now_utc() -> CivilDateTime [time]
+    todo("chrono-nv.now_utc")
+
+// The civil date-time at a given offset, right now.
+//
+// `[time]` and nothing more: the offset is the caller's, so the
+// environment is not read.  This is the call a program that logs at a
+// fixed offset should use, and the one a program that resolved its
+// zone once at start-up should use afterwards.
+//
+// ```novo
+// use clock
+// use zone
+//
+// fn here(at: Offset) -> CivilDateTime [time]
+//     clock.now(at)
+// ```
+pub fn now(at: Offset) -> CivilDateTime [time]
+    todo("chrono-nv.now")
+
+// The civil date-time as the host's own clock reads it, right now.
+//
+// `[time, io]` — `zone.local()` then `now`.  It is the convenience for
+// a program printing something a person will read, and it costs the
+// wider row, which is the disclosure.
+//
+// ```novo
+// use clock
+//
+// fn main() [io, time]
+//     match clock.now_local()
+//         Ok(dt) => println("${dt.time.hour}")
+//         Err(_) => println("no local zone")
+// ```
+pub fn now_local() -> Result<CivilDateTime, ChronoError> [time, io]
+    todo("chrono-nv.now_local")
+
+// Today's date at UTC.
+//
+// `now_utc().date`, named, because "what is today" is asked far more
+// often than "what time is it" and a caller should not have to reach
+// through a date-time to ask it.
+//
+// ```novo
+// use clock
+// use iso8601
+//
+// fn log_name() -> Str [time]
+//     iso8601.format_date(clock.today_utc())
+// ```
+pub fn today_utc() -> CivilDate [time]
+    todo("chrono-nv.today_utc")
+
+// Today's date at a given offset.
+//
+// The offset matters more here than anywhere else in this module: for
+// the hours around midnight, two callers at different offsets are on
+// different days, and a log rotation that used UTC while a person read
+// local dates is the bug this argument exists to prevent.
+//
+// ```novo
+// use clock
+// use zone
+//
+// fn today_at(at: Offset) -> CivilDate [time]
+//     clock.today(at)
+// ```
+pub fn today(at: Offset) -> CivilDate [time]
+    todo("chrono-nv.today")
+
+// Today's date as the host's own clock reads it.
+//
+// ```novo
+// use clock
+//
+// fn main() [io, time]
+//     match clock.today_local()
+//         Ok(d)  => println("${d.year}-${d.month}-${d.day}")
+//         Err(_) => println("no local zone")
+// ```
+pub fn today_local() -> Result<CivilDate, ChronoError> [time, io]
+    todo("chrono-nv.today_local")
+
+// Whole seconds since 1970-01-01T00:00:00Z, negative before it.
+//
+// The instant with no calendar on it, for a caller writing a
+// timestamp into a protocol that wants one.
+//
+// ```novo
+// use clock
+//
+// fn main() [io, time]
+//     println("${clock.unix_seconds()}")
+// ```
+pub fn unix_seconds() -> Int [time]
+    todo("chrono-nv.unix_seconds")
+
+// Seconds since the epoch, and the nanosecond within that second.
+//
+// Two `Int`s and not a `Float`: 52 bits of mantissa resolves to about
+// 0.2 µs around the present day, so a `Float` timestamp cannot carry
+// the nanosecond it was read with.  `std.time.now()` is the `Float`
+// surface and stays available for interop; this is the one that
+// round-trips.
+//
+// ```novo
+// use clock
+//
+// fn main() [io, time]
+//     let (s, n) = clock.unix_nanos()
+//     println("${s}.${n}")
+// ```
+pub fn unix_nanos() -> (Int, Int) [time]
+    todo("chrono-nv.unix_nanos")
+
+// The civil date-time a Unix instant reads as at a given offset.
+//
+// Pure — no clock, no environment.  It is here rather than in
+// `calendar-nv` because it needs an `Offset` to say which wall the
+// reading is off, and `Offset` is this package's type.
+//
+// `Calendar` when the instant is so far from the epoch that no
+// `CivilDate` holds it, carrying the calendar's own reason.
+//
+// ```novo
+// use clock
+// use zone
+//
+// fn main() [io]
+//     match clock.from_unix(0, 0, zone.utc())
+//         Ok(dt) => println("${dt.date.year}")    // 1970
+//         Err(_) => println("out of range")
+// ```
+pub fn from_unix(secs: Int, nanos: Int, at: Offset) -> Result<CivilDateTime, ChronoError>
+    todo("chrono-nv.from_unix")
+
+// The Unix instant a civil date-time names when read at a given
+// offset: seconds since the epoch, and the nanosecond within.
+//
+// The inverse of `from_unix` for every value it produces.  Pure, for
+// the same reason.
+//
+// ```novo
+// use clock
+// use civil
+// use zone
+//
+// fn main() [io]
+//     let dt = civil.datetime(civil.date(1970, 1, 1)!, civil.midnight())
+//     match clock.to_unix(dt, zone.utc())
+//         Ok((s, _)) => println("${s}")           // 0
+//         Err(_)     => println("out of range")
+// ```
+pub fn to_unix(dt: CivilDateTime, at: Offset) -> Result<(Int, Int), ChronoError>
+    todo("chrono-nv.to_unix")

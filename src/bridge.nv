@@ -1,0 +1,130 @@
+// bridge.nv — across to the standard library's time types, and back.
+//
+// WHY THIS MODULE EXISTS
+//
+// `std.time` already has a zone-aware timestamp (`Zoned`), a duration
+// (`Duration`) and a monotonic reading (`Mono`), and a program using
+// this package will meet all three: `std.http`'s dates, `std.log`'s
+// stamps, a `std.net` deadline.  Two libraries that both describe time
+// and cannot exchange values force the caller to unpack integers by
+// hand at every seam, and the unpacking is where the off-by-a-thousand
+// lives.
+//
+// So the conversions are HERE, in the `host` half, and they are named
+// after the direction rather than the type.  They are pure — no clock,
+// no environment — because a conversion between two representations of
+// a value the caller already holds performs nothing.  They live in
+// this package rather than in `calendar-nv` because `Zoned` carries an
+// offset and `Offset` is this package's type.
+//
+// WHAT IS AND IS NOT LOSSLESS
+//
+//   Zoned    -> CivilDateTime + Offset    exact, both ways
+//   Duration -> TimeDelta                 exact
+//   TimeDelta -> Duration                 MICROSECONDS: the nanosecond
+//                                         part is truncated toward
+//                                         negative infinity, and a
+//                                         length that does not fit an
+//                                         Int of microseconds is
+//                                         `Overflow`
+//   Mono     -> Tick                      exact as far as the source
+//                                         goes; `Mono` is microseconds,
+//                                         so the low three digits of
+//                                         the resulting `Tick` are zero
+//
+// The two lossy rows are lossy in `std.time`'s direction, not in this
+// package's, and they are written down here rather than discovered.
+
+use zone
+
+// The civil date-time a `Zoned` reads as, and the offset it carries.
+//
+// Exact: a `Zoned` is an instant plus a fixed offset, and that is
+// precisely a `CivilDateTime` plus an `Offset`.
+//
+// `Calendar` when the `Zoned` is at a year outside the range
+// `calendar-nv` represents, carrying the calendar's own reason.
+//
+// ```novo
+// use bridge
+//
+// fn read(z: Zoned) -> Result<(CivilDateTime, Offset), ChronoError>
+//     bridge.from_zoned(z)
+// ```
+pub fn from_zoned(z: Zoned) -> Result<(CivilDateTime, Offset), ChronoError>
+    todo("chrono-nv.from_zoned")
+
+// A `Zoned` at a given offset.
+//
+// The inverse of `from_zoned` for every value it produces.  `Overflow`
+// when the instant does not fit the seconds `Zoned` holds.
+//
+// ```novo
+// use bridge
+// use civil
+// use zone
+//
+// fn main() [io]
+//     let dt = civil.datetime(civil.date(2026, 3, 15)!, civil.midnight())
+//     match bridge.to_zoned(dt, zone.utc())
+//         Ok(z)  => println(z.to_rfc3339())
+//         Err(_) => println("out of range")
+// ```
+pub fn to_zoned(dt: CivilDateTime, at: Offset) -> Result<Zoned, ChronoError>
+    todo("chrono-nv.to_zoned")
+
+// A `std.time.Duration` as a `TimeDelta`.
+//
+// Exact — microseconds widen into nanoseconds without loss.
+//
+// ```novo
+// use bridge
+// use span
+//
+// fn main() [io]
+//     let d = bridge.from_std_duration(Duration.of_ms(1500))
+//     println("${span.as_seconds(d)}")            // 1
+// ```
+pub fn from_std_duration(d: Duration) -> TimeDelta
+    todo("chrono-nv.from_std_duration")
+
+// A `TimeDelta` as a `std.time.Duration`.
+//
+// LOSSY in the microsecond: the nanosecond remainder is truncated
+// toward negative infinity, matching `TimeDelta`'s own `as_seconds`
+// so that the two truncations do not disagree.  `Overflow` when the
+// length does not fit an `Int` of microseconds.
+//
+// ```novo
+// use bridge
+// use span
+//
+// fn main() [io]
+//     match bridge.to_std_duration(span.nanoseconds(1500))
+//         Ok(d)  => println("${d.us()}")          // 1
+//         Err(_) => println("out of range")
+// ```
+pub fn to_std_duration(d: TimeDelta) -> Result<Duration, ChronoError>
+    todo("chrono-nv.to_std_duration")
+
+// A `std.time.Mono` reading as a `Tick`.
+//
+// Both are readings of the same monotonic clock from the same
+// unspecified origin, so this is a unit change and nothing more: the
+// low three digits of the resulting `Tick` are zero, because `Mono` is
+// microseconds.
+//
+// There is no conversion back.  A `Tick` may carry nanoseconds a
+// `Mono` cannot hold, and a lossy conversion in the direction a caller
+// would use for a measurement is one this package will not offer —
+// take the `TimeDelta` and convert that.
+//
+// ```novo
+// use bridge
+//
+// fn main() [io, time]
+//     let t = bridge.from_mono(Mono.now())
+//     println("${t.nanos % 1000}")                // 0
+// ```
+pub fn from_mono(m: Mono) -> Tick
+    todo("chrono-nv.from_mono")

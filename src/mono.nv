@@ -1,0 +1,118 @@
+// mono.nv — the clock that only goes forward, for measuring.
+//
+// THIS IS THE OTHER CLOCK, and mixing it up with `clock` is the single
+// most common time bug there is.  The wall clock answers "what does
+// the calendar say" and can go backwards: NTP steps it, a person sets
+// it, a virtual machine resumes from a snapshot.  The monotonic clock
+// answers "how much time has passed" and cannot.  A `Tick` therefore
+// has no calendar meaning at all — it is a reading from an
+// unspecified origin, comparable only with other readings from the
+// same process — and there is deliberately no conversion from it to a
+// `CivilDateTime`.
+//
+// WHY IT IS `Tick` AND NOT `Instant`
+//
+// Because `Instant` is a standard-library struct name and redeclaring
+// one is a compile error, the same collision `calendar-nv` hit with
+// `Date` and `Duration`.  `Tick` is also the name `std.time`'s own
+// monotonic free functions use — `core.time.ticks()` — so the port
+// reads consistently with the layer underneath it.
+//
+// `std.time.Mono` IS THE SAME CLOCK, and this is not a competitor to
+// it: `Mono` is microseconds and pairs with `std.time.Duration`, while
+// `Tick` pairs with `calendar-nv`'s nanosecond-exact `TimeDelta` so
+// that a measurement and a calendar difference are the same type and
+// can be compared, summed and formatted by the same functions.
+// `bridge` converts between them in both directions.
+
+// A monotonic reading, with no calendar meaning.
+//
+// Comparable only with other readings from the same process.  Two
+// `Tick`s from two runs of a program say nothing about each other, and
+// neither says anything about a date.
+//
+// ```novo
+// use mono
+//
+// fn main() [io, time]
+//     let t = mono.read()
+//     println("${t.nanos >= 0}")
+// ```
+pub struct Tick
+    // Nanoseconds from an unspecified origin.  Never negative, always
+    // increasing within a process, and meaningless outside one.
+    nanos: Int
+
+// The monotonic clock, now.
+//
+// ```novo
+// use mono
+// use span
+//
+// fn timed() -> TimeDelta [time]
+//     let start = mono.read()
+//     mono.elapsed(start)
+// ```
+pub fn read() -> Tick [time]
+    todo("chrono-nv.read")
+
+// How long since a reading.
+//
+// `[time]` because it takes a second reading.  Never negative: the
+// clock does not go backwards, which is the property the whole module
+// exists for.
+//
+// ```novo
+// use mono
+// use span
+//
+// fn main() [io, time]
+//     let start = mono.read()
+//     println("${span.as_seconds(mono.elapsed(start))}")
+// ```
+pub fn elapsed(since: Tick) -> TimeDelta [time]
+    todo("chrono-nv.elapsed")
+
+// The length between two readings, `later - earlier`.
+//
+// PURE — no row at all, because both readings are the caller's.  It is
+// the call a test uses, and the call a caller who already took the
+// second reading should use rather than paying for a third.
+//
+// Negative when the arguments are the wrong way round, which is the
+// only way a monotonic difference can be negative and is a bug in the
+// caller rather than in the clock.
+//
+// ```novo
+// use mono
+// use span
+//
+// fn main() [io, time]
+//     let a = mono.read()
+//     let b = mono.read()
+//     println("${span.is_negative(mono.between(a, b))}")     // false
+// ```
+pub fn between(earlier: Tick, later: Tick) -> TimeDelta
+    todo("chrono-nv.between")
+
+// Block for a length of time, at least.
+//
+// At LEAST: a scheduler may return late and this makes no promise it
+// will not.  A negative or zero length returns immediately rather than
+// erroring — "sleep for no time" is a thing a loop computes, not a
+// mistake somebody made.
+//
+// On the runtime tier prefer `core.rt.sleep_ms`, which parks the task
+// instead of blocking the thread; this is the blocking one, and it is
+// here because a program that is not on that tier still has to wait
+// sometimes.
+//
+// ```novo
+// use mono
+// use span
+//
+// fn pause() [time]
+//     mono.sleep(span.milliseconds(50))
+// ```
+pub fn sleep(d: TimeDelta) [time]
+    todo("chrono-nv.sleep")

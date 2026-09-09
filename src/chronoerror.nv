@@ -1,0 +1,86 @@
+// chronoerror.nv — the ways asking a machine what time it is can fail.
+//
+// A CALENDAR CANNOT FAIL AND A CLOCK CAN, and that difference is the
+// reason this package exists separately from `calendar-nv`.  Adding a
+// month to a date either works or the numbers were wrong; asking for
+// the local zone can fail because there is no zone configured, because
+// `TZ` says something nobody can parse, or because the program is
+// running under `--target=wasm` where there is no host to ask.
+//
+// So the effectful half has its own error type, and it CARRIES the
+// calendar's rather than flattening it: a conversion from Unix seconds
+// can produce a year outside the range `calendar-nv` represents, and
+// the reason for that is a `CalError` that already says so.
+
+// Why a clock, a zone or a conversion could not answer.
+//
+// ```novo
+// use chronoerror
+//
+// fn main() [io]
+//     let e = OffsetOutOfRange(2000)
+//     match chronoerror.calendar_cause(e)
+//         Some(_) => println("the calendar refused something")
+//         None    => println("the machine did")
+// ```
+pub enum ChronoError
+    // The host has no usable local zone: nothing configured, a `TZ`
+    // value that is not an offset this package can read, or a target
+    // with no host to ask.  `why` is prose, because the fix is in the
+    // environment and a person is the one who has to make it.
+    //
+    // A caller who cannot proceed without a zone should treat this as
+    // fatal; a caller who can should fall back to `zone.utc()` and say
+    // in its output that it did.
+    NoLocalZone(why: Str)
+    // An offset outside `-1080 ..= 1080` minutes — eighteen hours
+    // either way, which is the range RFC 3339 and every zone database
+    // stay inside.
+    OffsetOutOfRange(minutes: Int)
+    // The clock itself did not answer.  Rare, and real: a monotonic
+    // source that is not available on the target, a wall clock the
+    // runtime refuses under a sandbox.
+    ClockUnavailable(why: Str)
+    // The arithmetic left the range: a Unix second so far from the
+    // epoch that no `CivilDate` holds it, a `TimeDelta` that does not
+    // fit `std.time.Duration`'s microseconds.
+    Overflow(why: Str)
+    // The calendar half refused, carried through unchanged.  A
+    // conversion from a Unix timestamp is a `calendar-nv`
+    // construction with a clock reading in front of it, and when the
+    // construction is what failed the caller should get the reason
+    // that names the numbers rather than a string about clocks.
+    Calendar(cause: CalError)
+
+// The one-line message, for a caller who is printing rather than
+// matching.
+//
+// `Calendar` delegates to the reason it carries, so a caller that
+// prints this gets the calendar's own sentence and not a wrapper
+// around it.
+//
+// `Result<T, ChronoError>` requires the impl (SPEC § 3.4), so it exists
+// whether or not an interface release has anything to say yet.
+impl Error for ChronoError
+    // Panics with `not implemented` until the bodies land.
+    fn message(self) -> Str
+        todo("chrono-nv.ChronoError.message")
+
+// The calendar reason inside a `Calendar`, or `None` for the four that
+// are about the machine.
+//
+// It is what lets a caller act on the distinction that matters: a
+// `CalError` means the VALUE was impossible and no retry helps, while
+// `NoLocalZone` and `ClockUnavailable` are about the environment and a
+// program can fall back or ask again.
+//
+// ```novo
+// use chronoerror
+//
+// fn main() [io]
+//     match chronoerror.calendar_cause(ClockUnavailable("no monotonic source"))
+//         Some(_) => println("the calendar")
+//         None    => println("the machine")
+// ```
+pub fn calendar_cause(e: ChronoError) -> ?CalError
+    todo("chrono-nv.calendar_cause")
