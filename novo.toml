@@ -1,6 +1,6 @@
 [package]
 name        = "chrono-nv"
-version     = "0.0.1"
+version     = "0.0.2"
 description = "The half of a date library that asks the machine: the wall clock, today, the host's UTC offset, a monotonic reading that no clock change can move, deadlines and timers — all of it over calendar-nv's civil types, with every effect row saying which of the two questions a call is asking."
 license     = "Apache-2.0"
 
@@ -36,4 +36,4 @@ maintainers = ["novo-lang"]
 # package may depend on a `core` one — the shard audit's `dep-layer`
 # row is what checks that — and this direction is the whole point of
 # the split: the arithmetic is testable with no clock in the room.
-calendar-nv = { path = "../calendar-nv", version = "^0.0.1" }
+calendar-nv = "^0.0.1"
