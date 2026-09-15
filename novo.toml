@@ -1,6 +1,6 @@
 [package]
 name        = "chrono-nv"
-version     = "0.0.3"
+version     = "0.0.4"
 description = "The half of a date library that asks the machine: the wall clock, today, the host's UTC offset, a monotonic reading that no clock change can move, deadlines and timers — all of it over calendar-nv's civil types, with every effect row saying which of the two questions a call is asking."
 license     = "Apache-2.0"
 
