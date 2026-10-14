@@ -1,0 +1,164 @@
+// chrono_edge_tests.nv — the refusals, and the branches a host whose
+// zone is Europe/Copenhagen cannot reach.
+//
+// The two API suites assert what a clock and a zone ANSWER; this one
+// takes the far edges, where the answer is `Err` — an instant past the
+// years a `CivilDate` holds, a wait with no monotonic reading to land
+// on, a length `std.time`'s microseconds cannot hold — and it pins the
+// sentence every `ChronoError` prints, which no other suite reads.
+//
+// THE ZONE CASES SET `TZ` THEMSELVES, because the offsets worth reading
+// are not the host's: one west of UTC, one past eighteen hours, and the
+// refusal `clock.now_local` carries back.  POSIX reads the number after
+// a zone name as hours WEST of UTC, so a name followed by `5` is `-05:00` and
+// one followed by `-19` is `+19:00`.  Each case puts `TZ` where it needs it, and the last one
+// sets it to `UTC`, so the file says what it depends on rather than
+// assuming the zone it happens to run under.
+
+use std.test
+use std.process
+use clock
+use zone
+use mono
+use timer
+use bridge
+use span
+use civil
+
+@test
+fn test_every_reason_prints_a_sentence() [io]
+    test.case("the two machine failures quote their prose")
+    test.assert(NoLocalZone("nothing set").message() == "no local zone: nothing set")
+    test.assert(ClockUnavailable("no monotonic source").message()
+                == "no clock: no monotonic source")
+
+    test.case("an offset out of range is quoted in minutes")
+    test.assert(OffsetOutOfRange(2000).message()
+                == "offset 2000 minutes is not in -1080..=1080")
+
+    test.case("a representation failure says what did not fit")
+    // Bound before the call rather than called on directly: a method
+    // invoked straight on a qualified constructor's temporary strands
+    // the string it answers, and the leak checker fails the run.
+    let over = ChronoError.Overflow("microseconds")
+    test.assert(over.message() == "out of range: microseconds")
+
+    test.case("and a calendar reason delegates to the calendar's sentence")
+    test.assert(Calendar(MonthOutOfRange(13)).message() == "month 13 is not in 1..=12")
+
+@test
+fn test_the_instants_a_civil_date_cannot_hold() [io]
+    // A `CivilDate` reaches about 3.16e16 seconds from the epoch either
+    // way, which is what the second count is bounded by before any
+    // calendar arithmetic runs.
+    test.case("the last second the calendar's year range reaches")
+    match clock.from_unix(31557600000000000, 0, zone.utc())
+        Err(Calendar(_)) => test.assert(true)
+        Err(_)           => test.fail("the calendar's own reason")
+        Ok(_)            => test.fail("no CivilDate holds that year")
+
+    test.case("and the same year going back the other way")
+    let far = CivilDateTime { date: CivilDate { year: 1000000000, month: 1, day: 1 }, time: civil.midnight() }
+    match clock.to_unix(far, zone.utc())
+        Err(Calendar(_)) => test.assert(true)
+        Err(_)           => test.fail("the calendar's own reason")
+        Ok(_)            => test.fail("no CivilDate holds that year")
+
+@test
+fn test_a_zoned_outside_the_calendar() [io]
+    test.case("a Zoned at a year no CivilDate holds")
+    let z = Zoned.from_unix_nanos(999999999999999999, 0, Tz.utc())
+    match bridge.from_zoned(z)
+        Err(Calendar(_)) => test.assert(true)
+        Err(_)           => test.fail("the calendar's own reason")
+        Ok(_)            => test.fail("that instant is outside every CivilDate")
+
+    test.case("and the other direction restates it in Zoned's own terms")
+    let far = CivilDateTime { date: CivilDate { year: 1000000000, month: 1, day: 1 }, time: civil.midnight() }
+    match bridge.to_zoned(far, zone.utc())
+        Err(Overflow(_)) => test.assert(true)
+        Err(_)           => test.fail("wrong reason")
+        Ok(_)            => test.fail("Zoned cannot hold that instant")
+
+@test
+fn test_a_signed_length_across_the_bridge() [io]
+    test.case("a negative Duration keeps its sign in the seconds")
+    let d = bridge.from_std_duration(Duration.of_us(-1500))
+    test.assert(span.is_negative(d))
+    test.assert(span.as_seconds(d) == -1)
+    test.assert(span.subsec_nanos(d) == 998500000)
+
+    test.case("and back, truncated the way as_seconds truncates")
+    match bridge.to_std_duration(span.milliseconds(-1500))
+        Ok(u)  => test.assert(u.us() == -1500000)
+        Err(_) => test.fail("a second and a half fits an Int of microseconds")
+
+@test
+fn test_a_wait_with_no_reading_to_land_on() [io, time]
+    test.case("more seconds than a reading of an Int can hold")
+    match timer.deadline_in(span.seconds(999999999999999))
+        Err(Overflow(_)) => test.assert(true)
+        Err(_)           => test.fail("wrong reason")
+        Ok(_)            => test.fail("a wait that long is not a wait")
+
+    test.case("and just as far the other way")
+    match timer.deadline_in(span.seconds(-999999999999999))
+        Err(Overflow(_)) => test.assert(true)
+        Err(_)           => test.fail("wrong reason")
+        Ok(_)            => test.fail("a wait that long is not a wait")
+
+    test.case("a length that leaves no room above the reading")
+    // The sleep puts the reading past a second; the wait below is the
+    // largest a `TimeDelta` can hold, so any reading above 0.86 seconds
+    // leaves the sum past the largest `Int`.
+    mono.sleep(span.seconds(1))
+    match timer.deadline_in(span.nanoseconds(9223372035999999999))
+        Err(Overflow(_)) => test.assert(true)
+        Err(_)           => test.fail("wrong reason")
+        Ok(_)            => test.fail("no reading is that far out")
+
+@test
+fn test_the_host_zone_is_read_at_the_offset_it_names() [io]
+    test.case("a zone west of UTC answers a negative offset")
+    let when = civil.datetime(civil.date(2026, 1, 15)!, civil.midnight())
+    process.env_set("TZ", "XXX5")
+    match zone.offset_at(when)
+        Ok(o)  => test.assert(o.minutes == -300)
+        Err(_) => test.fail("TZ=XXX5 is five hours west of UTC")
+
+    test.case("and the same civil time is read again once TZ changes")
+    process.env_set("TZ", "UTC")
+    match zone.offset_at(when)
+        Ok(o)  => test.assert(o.minutes == 0)
+        Err(_) => test.fail("UTC is a zone every host can read")
+
+    test.case("so local resolves too, where the host has a zone")
+    match zone.local()
+        Ok(o)  => test.assert(o.minutes == 0)
+        Err(_) => test.fail("TZ is UTC, which is a zone")
+
+@test
+fn test_a_host_zone_past_eighteen_hours_is_refused() [io, time]
+    test.case("nineteen hours east is past the range and says so")
+    process.env_set("TZ", "XXX-19")
+    let when = civil.datetime(civil.date(2026, 1, 15)!, civil.midnight())
+    match zone.offset_at(when)
+        Err(NoLocalZone(_)) => test.assert(true)
+        Err(_)              => test.fail("a zone failure is NoLocalZone")
+        Ok(_)               => test.fail("no zone is nineteen hours from UTC")
+
+    test.case("and both local calls carry that refusal back")
+    match clock.now_local()
+        Err(NoLocalZone(_)) => test.assert(true)
+        Err(_)              => test.fail("a zone failure is NoLocalZone")
+        Ok(_)               => test.fail("the zone did not resolve")
+    match clock.today_local()
+        Err(NoLocalZone(_)) => test.assert(true)
+        Err(_)              => test.fail("a zone failure is NoLocalZone")
+        Ok(_)               => test.fail("the zone did not resolve")
+
+    test.case("a zone inside the range reads again once it is set back")
+    process.env_set("TZ", "UTC")
+    match clock.now_local()
+        Ok(dt) => test.assert(dt.date.year >= 2020)
+        Err(_) => test.fail("UTC is a zone this package holds")

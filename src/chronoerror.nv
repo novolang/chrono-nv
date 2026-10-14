@@ -59,12 +59,17 @@ pub enum ChronoError
 // prints this gets the calendar's own sentence and not a wrapper
 // around it.
 //
-// `Result<T, ChronoError>` requires the impl (SPEC § 3.4), so it exists
-// whether or not an interface release has anything to say yet.
+// `Result<T, ChronoError>` requires the impl (SPEC § 3.4), so a caller
+// holding one can print it without matching first.
 impl Error for ChronoError
-    // Panics with `not implemented` until the bodies land.
+    // One sentence per variant, quoting whatever the variant carries.
     fn message(self) -> Str
-        todo("chrono-nv.ChronoError.message")
+        match self
+            NoLocalZone(why)      => "no local zone: ${why}"
+            OffsetOutOfRange(m)   => "offset ${m} minutes is not in -1080..=1080"
+            ClockUnavailable(why) => "no clock: ${why}"
+            Overflow(why)         => "out of range: ${why}"
+            Calendar(cause)       => cause.message()
 
 // The calendar reason inside a `Calendar`, or `None` for the four that
 // are about the machine.
@@ -83,4 +88,6 @@ impl Error for ChronoError
 //         None    => println("the machine")
 // ```
 pub fn calendar_cause(e: ChronoError) -> ?CalError
-    todo("chrono-nv.calendar_cause")
+    match e
+        Calendar(cause) => Some(cause)
+        _               => None

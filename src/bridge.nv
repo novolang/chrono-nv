@@ -36,6 +36,38 @@
 // package's, and they are written down here rather than discovered.
 
 use zone
+use clock
+
+// ── The bound a microsecond count shares ─────────────────────────────
+
+// The most seconds a `TimeDelta` can hold and still fit an `Int` of
+// microseconds once its nanosecond field is added.
+//
+// `std.time.Duration` is microseconds in an `Int`, so the seconds that
+// do not fit are refused rather than multiplied into a trap.
+const MAX_MICRO_SECS = 9223372036854
+
+// A count of microseconds as a `TimeDelta`, which is seconds plus a
+// nanosecond field inside one second.
+//
+// The two fields are split apart before any product, so no `Duration`
+// a caller can hold produces a multiplication that leaves an `Int`; a
+// negative count keeps the sign in the seconds, as `TimeDelta` does.
+fn delta_of_micros(us: Int) -> TimeDelta
+    let secs = us / 1000000
+    let rem = us % 1000000
+    if rem < 0
+        TimeDelta { secs: secs - 1, nanos: (rem + 1000000) * 1000 }
+    else
+        TimeDelta { secs: secs, nanos: rem * 1000 }
+
+// The `Tz` a `Zoned` is expressed in, from an offset this package
+// holds.
+//
+// An `Offset` stops at eighteen hours and `Tz.fixed` accepts past
+// twenty-three, so the conversion cannot be refused.
+fn tz_of(at: Offset) -> Tz
+    Tz.fixed(at.minutes) ?? Tz.utc()
 
 // The civil date-time a `Zoned` reads as, and the offset it carries.
 //
@@ -52,7 +84,16 @@ use zone
 //     bridge.from_zoned(z)
 // ```
 pub fn from_zoned(z: Zoned) -> Result<(CivilDateTime, Offset), ChronoError>
-    todo("chrono-nv.from_zoned")
+    // The offset comes off the value and is put through this
+    // package's own constructor, so a zone from outside it cannot
+    // hand back an `Offset` outside the range that type documents.
+    let tz = z.tz()
+    let at = zone.fixed(tz.offset_minutes())!
+    let secs = z.unix_secs()
+    let nanos = z.nanos()
+    match clock.from_unix(secs, nanos, at)
+        Ok(dt) => Ok((dt, at))
+        Err(e) => Err(e)
 
 // A `Zoned` at a given offset.
 //
@@ -71,7 +112,13 @@ pub fn from_zoned(z: Zoned) -> Result<(CivilDateTime, Offset), ChronoError>
 //         Err(_) => println("out of range")
 // ```
 pub fn to_zoned(dt: CivilDateTime, at: Offset) -> Result<Zoned, ChronoError>
-    todo("chrono-nv.to_zoned")
+    // The seconds are `clock.to_unix`'s arithmetic.  What it refuses
+    // is a year the calendar cannot name, which is also an instant a
+    // `Zoned` cannot hold, and the field that fails is its seconds,
+    // so the reason is restated in those terms.
+    match clock.to_unix(dt, at)
+        Ok((secs, nanos)) => Ok(Zoned.from_unix_nanos(secs, nanos, tz_of(at)))
+        Err(_)            => Err(ChronoError.Overflow("the instant does not fit the seconds a Zoned holds"))
 
 // A `std.time.Duration` as a `TimeDelta`.
 //
@@ -86,7 +133,7 @@ pub fn to_zoned(dt: CivilDateTime, at: Offset) -> Result<Zoned, ChronoError>
 //     println("${span.as_seconds(d)}")            // 1
 // ```
 pub fn from_std_duration(d: Duration) -> TimeDelta
-    todo("chrono-nv.from_std_duration")
+    delta_of_micros(d.us())
 
 // A `TimeDelta` as a `std.time.Duration`.
 //
@@ -105,7 +152,13 @@ pub fn from_std_duration(d: Duration) -> TimeDelta
 //         Err(_) => println("out of range")
 // ```
 pub fn to_std_duration(d: TimeDelta) -> Result<Duration, ChronoError>
-    todo("chrono-nv.to_std_duration")
+    // The nanosecond field is divided down rather than the value
+    // multiplied up, so the rounding matches `as_seconds`: the sign is
+    // in the seconds and the nanosecond field is never negative, which
+    // makes the division a floor.
+    if d.secs > MAX_MICRO_SECS or d.secs < -MAX_MICRO_SECS
+        return Err(ChronoError.Overflow("a TimeDelta of more microseconds than an Int holds"))
+    Ok(Duration.of_us(d.secs * 1000000 + d.nanos / 1000))
 
 // A `std.time.Mono` reading as a `Tick`.
 //
@@ -127,4 +180,6 @@ pub fn to_std_duration(d: TimeDelta) -> Result<Duration, ChronoError>
 //     println("${t.nanos % 1000}")                // 0
 // ```
 pub fn from_mono(m: Mono) -> Tick
-    todo("chrono-nv.from_mono")
+    // A `Mono` is microseconds and a `Tick` is nanoseconds, so this is
+    // a widening that leaves the low three digits of the `Tick` zero.
+    Tick { nanos: m.us() * 1000 }

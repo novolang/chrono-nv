@@ -24,6 +24,36 @@
 // disagreeing with the measurement.
 
 use mono
+use span
+
+// ── The reading a wait lands on ──────────────────────────────────────
+
+// The most seconds a wait can be: a reading is an `Int` of
+// nanoseconds, which is about 292 years, and the nanosecond field of
+// the wait is added on top of that.
+const MAX_WAIT_SECS = 9223372035
+
+// The least, one second further out because the nanosecond field is
+// added rather than subtracted.
+const MIN_WAIT_SECS = -9223372036
+
+// The reading a wait lands on, or `None` when it is past what a
+// reading holds.
+//
+// The sum is checked before it happens, because a reading is an `Int`
+// of nanoseconds and an `Int` traps on overflow; the bound against the
+// reading itself cannot overflow, because the wait bound above keeps
+// it clear of both ends.
+fn later_nanos(base: Int, d: TimeDelta) -> ?Int
+    if d.secs > MAX_WAIT_SECS or d.secs < MIN_WAIT_SECS
+        return None
+    let delta = d.secs * 1000000000 + d.nanos
+    // Only the positive side can leave the range.  The wait bound above
+    // keeps the negative side clear of the least `Int` on its own, and a
+    // reading of the monotonic clock is never negative.
+    if delta > 0 and base > 9223372036854775807 - delta
+        return None
+    Some(base + delta)
 
 // A point on the monotonic clock, after which something should stop
 // waiting.
@@ -59,7 +89,13 @@ pub struct Deadline
 //     timer.deadline_in(span.milliseconds(250))
 // ```
 pub fn deadline_in(d: TimeDelta) -> Result<Deadline, ChronoError> [time]
-    todo("chrono-nv.deadline_in")
+    // A deadline is a reading the wait is added to rather than a
+    // length, so a length with no reading to land on is refused here
+    // rather than at the far end of the wait.
+    let now = mono.read()
+    match later_nanos(now.nanos, d)
+        None        => Err(ChronoError.Overflow("that wait has no monotonic reading to land on"))
+        Some(nanos) => Ok(Deadline { at: Tick { nanos: nanos } })
 
 // A deadline at a monotonic reading the caller already has.
 //
@@ -77,7 +113,7 @@ pub fn deadline_in(d: TimeDelta) -> Result<Deadline, ChronoError> [time]
 //     println("${timer.expired(d)}")              // true — it is now
 // ```
 pub fn deadline_at(t: Tick) -> Deadline
-    todo("chrono-nv.deadline_at")
+    Deadline { at: t }
 
 // Whether the deadline has passed.
 //
@@ -90,7 +126,10 @@ pub fn deadline_at(t: Tick) -> Deadline
 //     println("${timer.expired(d)}")              // false
 // ```
 pub fn expired(d: Deadline) -> Bool [time]
-    todo("chrono-nv.expired")
+    // The deadline read against now, rather than now against the
+    // deadline, so that "has the reading arrived or gone past" is one
+    // question with one sign.
+    not span.is_negative(mono.between(d.at, mono.read()))
 
 // How long is left, or a negative length if the deadline has passed.
 //
@@ -108,7 +147,7 @@ pub fn expired(d: Deadline) -> Bool [time]
 //     println("${span.is_negative(timer.remaining(d))}")      // false
 // ```
 pub fn remaining(d: Deadline) -> TimeDelta [time]
-    todo("chrono-nv.remaining")
+    mono.between(mono.read(), d.at)
 
 // A stopwatch, with the name of what it is timing.
 //
@@ -138,7 +177,10 @@ pub struct Timer
 //     println(t.label)
 // ```
 pub fn start(label: Str) -> Timer [time]
-    todo("chrono-nv.start")
+    // One reading serves both fields: nothing has been lapped yet, so
+    // the first lap measures from the start.
+    let at = mono.read()
+    Timer { label: label, started: at, lapped: at }
 
 // The time since the last lap, and a timer to take the next one from.
 //
@@ -158,7 +200,11 @@ pub fn start(label: Str) -> Timer [time]
 //     println("${span.as_seconds(second)}")
 // ```
 pub fn lap(t: Timer) -> (Timer, TimeDelta) [time]
-    todo("chrono-nv.lap")
+    // The next lap is measured from this reading, so the timer that
+    // comes back has this one in `lapped` and the start untouched.
+    let now = mono.read()
+    let took = mono.between(t.lapped, now)
+    (Timer { label: t.label, started: t.started, lapped: now }, took)
 
 // The total time since the timer was started, laps ignored.
 //
@@ -175,4 +221,6 @@ pub fn lap(t: Timer) -> (Timer, TimeDelta) [time]
 //     println("${span.as_seconds(timer.stop(t))}")
 // ```
 pub fn stop(t: Timer) -> TimeDelta [time]
-    todo("chrono-nv.stop")
+    // From the start, not from the last lap: a lap is an interval
+    // inside the whole and the total ignores them all.
+    mono.between(t.started, mono.read())

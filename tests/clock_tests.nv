@@ -1,10 +1,5 @@
 // clock_tests.nv — the API suite for the wall clock and the zone.
 //
-// RED ON PURPOSE.  Every body in this package is a `todo()`, so every
-// assertion reaches `not implemented: chrono-nv.<fn>` and the suite
-// fails; `novo test tests/clock_tests.nv --isolate` gives every `@test`
-// its own process and names the function each one stopped at.
-//
 // A CLOCK IS THE HARDEST THING TO TEST and the cases below are shaped
 // accordingly: what they assert about `now` is what is true of EVERY
 // reading — that it is inside a range, that two readings are ordered,

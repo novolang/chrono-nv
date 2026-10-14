@@ -25,6 +25,24 @@
 // can be compared, summed and formatted by the same functions.
 // `bridge` converts between them in both directions.
 
+use std.time
+use span
+
+// ── The length a sleep takes ─────────────────────────────────────────
+
+// A length as the seconds a host sleep takes, floored at zero.
+//
+// The nanosecond field of a `TimeDelta` is never negative and the sign
+// lives in its seconds, so the sum is the length; the floor is what
+// makes a length that is not positive return instead of sleeping
+// backwards.
+fn seconds_of(d: TimeDelta) -> Float
+    let total = int.to_float(d.secs) + int.to_float(d.nanos) / 1000000000.0
+    if total > 0.0
+        total
+    else
+        0.0
+
 // A monotonic reading, with no calendar meaning.
 //
 // Comparable only with other readings from the same process.  Two
@@ -54,7 +72,10 @@ pub struct Tick
 //     mono.elapsed(start)
 // ```
 pub fn read() -> Tick [time]
-    todo("chrono-nv.read")
+    // `Mono` is the same clock as `time.ticks_us` with the unit in the
+    // type, and a `Tick` counts the reading in nanoseconds.
+    let reading = Mono.now()
+    Tick { nanos: reading.us() * 1000 }
 
 // How long since a reading.
 //
@@ -71,7 +92,7 @@ pub fn read() -> Tick [time]
 //     println("${span.as_seconds(mono.elapsed(start))}")
 // ```
 pub fn elapsed(since: Tick) -> TimeDelta [time]
-    todo("chrono-nv.elapsed")
+    between(since, read())
 
 // The length between two readings, `later - earlier`.
 //
@@ -93,7 +114,17 @@ pub fn elapsed(since: Tick) -> TimeDelta [time]
 //     println("${span.is_negative(mono.between(a, b))}")     // false
 // ```
 pub fn between(earlier: Tick, later: Tick) -> TimeDelta
-    todo("chrono-nv.between")
+    // Both readings are `Int` nanosecond counts and their difference
+    // can leave the range an `Int` holds, so each is split at the
+    // second first and the two fields are subtracted apart.
+    let before = span.nanoseconds(earlier.nanos)
+    let after = span.nanoseconds(later.nanos)
+    let secs = after.secs - before.secs
+    let nanos = after.nanos - before.nanos
+    if nanos < 0
+        TimeDelta { secs: secs - 1, nanos: nanos + 1000000000 }
+    else
+        TimeDelta { secs: secs, nanos: nanos }
 
 // Block for a length of time, at least.
 //
@@ -115,4 +146,6 @@ pub fn between(earlier: Tick, later: Tick) -> TimeDelta
 //     mono.sleep(span.milliseconds(50))
 // ```
 pub fn sleep(d: TimeDelta) [time]
-    todo("chrono-nv.sleep")
+    // A length that is not positive is no wait at all, and the host's
+    // sleep takes seconds as a `Float`, so the conversion floors it.
+    time.sleep(seconds_of(d))

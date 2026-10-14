@@ -29,6 +29,9 @@
 // one.  A library that offered only `local()` would charge `[time]` to
 // a caller who has an instant already and only wants it translated.
 
+use std.time
+use civil
+
 // Minutes east of UTC.
 //
 // `120` is `+02:00`, `-330` is `-05:30`, `0` is `Z`.  Minutes and not
@@ -58,7 +61,7 @@ pub struct Offset
 //     println("${zone.utc().minutes}")            // 0
 // ```
 pub fn utc() -> Offset
-    todo("chrono-nv.utc")
+    Offset { minutes: 0 }
 
 // An offset a caller already knows, or the reason it is not one.
 //
@@ -74,7 +77,56 @@ pub fn utc() -> Offset
 //         Err(_) => println("not an offset")
 // ```
 pub fn fixed(minutes: Int) -> Result<Offset, ChronoError>
-    todo("chrono-nv.fixed")
+    if minutes < -1080 or minutes > 1080
+        return Err(OffsetOutOfRange(minutes))
+    Ok(Offset { minutes: minutes })
+
+// ── Reading the host's zone ──────────────────────────────────────────
+
+// The seconds a civil date-time names when its fields are read at UTC.
+//
+// The reading every offset here is measured against, and the one a
+// Unix instant counts in.
+fn utc_seconds_of(when: CivilDateTime) -> Int
+    let day = civil.epoch_day(when.date)
+    day * 86400 + when.time.hour * 3600 + when.time.minute * 60 + when.time.second
+
+// The instant the host's own zone reads a civil date-time as, or `None`
+// when the host will not place it.
+//
+// `time.of_ymd` is `mktime`, and `-1` is what mktime answers when it
+// cannot.  A midnight is a whole minute and `-1` is not, so the marker
+// is unambiguous.
+fn host_seconds_of(when: CivilDateTime) -> ?Int
+    let midnight = time.of_ymd(when.date.year, when.date.month, when.date.day)
+    if midnight == -1.0
+        // cov: skip — measured on this host: mktime places every year the calendar can name rather than answering -1, so the arm waits for a narrower time_t
+        return None
+    let day = float.to_int(midnight)
+    Some(day + when.time.hour * 3600 + when.time.minute * 60 + when.time.second)
+
+// A whole number of minutes from a difference the host may have
+// rounded.
+//
+// The host answers a civil time as a `Float`, which carries a whole
+// number of seconds exactly only to about 285 million years from the
+// epoch, so a difference that is a whole number of minutes can arrive
+// a few seconds short of one.
+fn round_minutes(diff: Int) -> Int
+    if diff < 0
+        -((-diff + 30) / 60)
+    else
+        (diff + 30) / 60
+
+// The civil date-time at UTC, right now.
+//
+// The fields come from `Zoned`, which carries the calendar reading and
+// the instant together, so the two cannot disagree; every field is one
+// the calendar accepts, which is what the unwraps say.
+fn civil_now() -> CivilDateTime [time]
+    let z = Zoned.now(Tz.utc())
+    let when = civil.time_of(z.hour(), z.minute(), z.second(), z.nanos())!
+    civil.datetime(civil.date(z.year(), z.month(), z.day())!, when)
 
 // The offset the HOST's zone had at a given civil time.
 //
@@ -103,7 +155,18 @@ pub fn fixed(minutes: Int) -> Result<Offset, ChronoError>
 //         Ok(d)  => zone.offset_at(civil.datetime(d, civil.midnight()))
 // ```
 pub fn offset_at(when: CivilDateTime) -> Result<Offset, ChronoError> [io]
-    todo("chrono-nv.offset_at")
+    // The zone belongs to the host and the host reads it out of the
+    // environment; this package carries no rules of its own, so the
+    // instant is worked out against the same reading mktime makes.
+    match host_seconds_of(when)
+        Some(local) =>
+            let minutes = round_minutes(utc_seconds_of(when) - local)
+            if minutes < -1080 or minutes > 1080
+                Err(NoLocalZone("the host's zone is outside the range this package holds"))
+            else
+                Ok(Offset { minutes: minutes })
+        // cov: skip — the arm is the refusal `host_seconds_of` cannot produce on a host whose mktime answers every year, so it waits with the marker above it
+        None        => Err(NoLocalZone("the host could not place that civil time"))
 
 // The host's offset right now.
 //
@@ -121,4 +184,7 @@ pub fn offset_at(when: CivilDateTime) -> Result<Offset, ChronoError> [io]
 //         Err(_) => println("no local zone; using UTC")
 // ```
 pub fn local() -> Result<Offset, ChronoError> [time, io]
-    todo("chrono-nv.local")
+    // "Right now" is taken as a civil reading and handed to `offset_at`,
+    // which is the function that knows how to ask the host where a civil
+    // time falls.
+    offset_at(civil_now())

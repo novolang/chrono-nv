@@ -12,12 +12,6 @@ implementation is Rust's
 `Utc::now`, `Local::now`, `Offset` and the construction of a timestamp
 from a Unix second.
 
-**Status: NOT IMPLEMENTED — interface only.** Every function is declared
-with its full signature, but every body is a `todo()` that panics when
-called. The package is published so its design can be reviewed and
-depended on before it is implemented. Version 0.1.0 will be the first
-working release.
-
 ## What it is
 
 A machine has two clocks and they answer different questions. The table
@@ -115,10 +109,7 @@ fn main() [io, time]
     println("${span.as_seconds(timer.stop(t))}")
 ```
 
-Build and test with `novo pkg build` and `novo test`. Today `novo test`
-fails on purpose: every test reaches a
-`not implemented: chrono-nv.<fn>` panic. The tests are the
-specification the implementation will have to satisfy.
+Build and test with `novo pkg build` and `novo test`.
 
 ## What the package contains
 
@@ -277,8 +268,9 @@ the clock itself.
 ## Tests
 
 ```bash
-novo test tests/clock_tests.nv       #  9 tests: the wall clock and the zone
-novo test tests/mono_tests.nv        # 11 tests: the monotonic half and the bridge
+novo test tests/clock_tests.nv        #  8 tests: the wall clock and the zone
+novo test tests/mono_tests.nv         # 10 tests: the monotonic half and the bridge
+novo test tests/chrono_edge_tests.nv  #  7 tests: the refusals and the far edges
 ```
 
 The reference implementations are Rust's `chrono` for the wall-clock
@@ -298,29 +290,13 @@ checks that `zone.utc()` is zero, that `zone.fixed` refuses past
 eighteen hours, and that the conversions in `bridge` are exact in the
 three directions that claim to be.
 
-The tests compile today and fail at run, each on the
-`not implemented: chrono-nv.<fn>` panic that is its body. That is the
-expected state of an interface release. Run `novo test --isolate` for
-one verdict per test, naming the function it stopped at. They turn
-green one at a time as bodies land.
-
-## Implementation status
-
-| Item | Implemented |
-| --- | --- |
-| `zone.Offset`, `mono.Tick`, `timer.Deadline`, `timer.Timer` | declared |
-| `chronoerror.ChronoError` | declared |
-| `zone.utc`, `.fixed`, `.offset_at`, `.local` | no |
-| `clock.now_utc`, `.now`, `.now_local` | no |
-| `clock.today_utc`, `.today`, `.today_local` | no |
-| `clock.unix_seconds`, `.unix_nanos` | no |
-| `clock.from_unix`, `.to_unix` | no |
-| `mono.read`, `.elapsed`, `.between`, `.sleep` | no |
-| `timer.deadline_in`, `.deadline_at`, `.expired`, `.remaining` | no |
-| `timer.start`, `.lap`, `.stop` | no |
-| `bridge.from_zoned`, `.to_zoned` | no |
-| `bridge.from_std_duration`, `.to_std_duration`, `.from_mono` | no |
-| `chronoerror.calendar_cause`, `ChronoError.message` | no |
+The third file takes the refusals and the far edges: the sentence
+every `ChronoError` prints, the instants a `CivilDate` cannot hold, a
+wait with no monotonic reading to land on, and the host zones an
+ordinary host never has. It sets `TZ` for the cases that need one and
+puts it back when it is done, so what it asserts does not depend on
+the machine it runs on. Run `novo test --isolate tests` for one
+verdict per test.
 
 ## Licence
 

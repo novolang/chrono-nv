@@ -1,15 +1,10 @@
 [package]
 name        = "chrono-nv"
-version     = "0.0.5"
+version     = "0.1.0"
 description = "The half of a date library that asks the machine: the wall clock, today, the host's UTC offset, a monotonic reading that no clock change can move, deadlines and timers — all of it over calendar-nv's civil types, with every effect row saying which of the two questions a call is asking."
 license     = "Apache-2.0"
 
-# An INTERFACE release: every `pub fn` body is a `todo()`, so the
-# signatures and the effect rows are published and nothing is
-# implemented.  `novo pkg publish` recognises the shape and requires
-# both the draft stability and the 0.0.x version; the first
-# implementation is the 0.1.0 published over it.
-stability   = "draft"
+stability   = "experimental"
 
 # `host`, and everything effectful in the split lives here.  The rows
 # are the disclosure and they are not all the same: reading a clock is
@@ -24,7 +19,7 @@ category    = "time"
 tags        = ["clock", "time", "monotonic", "deadline", "timer", "timezone", "chrono"]
 repository  = "https://github.com/novolang/chrono-nv"
 maintainers = ["novo-lang"]
-novo        = ">= 0.8.9"
+novo        = ">= 0.20.2"
 
 # A library: no `main`, so `novo pkg build` type-checks and
 # effect-checks every module under `src/` and writes no binary.

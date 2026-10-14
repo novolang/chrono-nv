@@ -5,6 +5,49 @@ All notable changes to chrono-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.0 — 2026-10-10
+
+The **implementation**.  Every body the 0.0.x interface published is
+written, `novo test --isolate` is green over three suites, and every
+`pub fn` answers the value or the refusal its doc comment promises.
+
+- **`ChronoError.Overflow("…").message()` binds the value first.**  A
+  trait method called straight on a qualified constructor's temporary
+  strands the string it answers: the edge suite's first case passed its
+  assertion and the run still exited 23 on the leak checker.  Filed as
+  `memory-perceus/a-method-called-on-a-qualified-enum-constructor-strands-its-string`;
+  put back when it closes.
+
+The new tests are in `tests/chrono_edge_tests.nv` — the sentence every
+`ChronoError` prints, the instants a `CivilDate` cannot hold, a wait
+with no monotonic reading to land on, and the host zones an ordinary
+host never has — because the API suites are the published oracle and
+are not edited.  It sets `TZ` for the cases that need one, so its
+verdicts do not depend on the machine it runs on.
+
+### Changed
+
+- **Eight `== false` comparisons in `tests/mono_tests.nv` are spelled
+  `not`.**  The 0.20.2 linter raises `redundant-bool` on each and
+  suggests exactly that rewrite, which is the same predicate.  All
+  eight are the interface release's: the 0.0.5 copy of the file lints
+  to the same eight, at the same sites.  The assertions' meanings are
+  untouched, and the suite still runs 10 of 10.
+
+### Known
+
+- Two lines in `src/zone.nv` are excused with a `cov: skip` marker:
+  the `-1` arm of the private `host_seconds_of`, and the `NoLocalZone`
+  arm in `offset_at` that consumes it.  Both rest on one measured host
+  fact: glibc's `mktime` places every year the calendar can name
+  rather than answering `-1`, so the refusal waits for a narrower
+  `time_t`.  Merged coverage of `src/` is 128 of 130 lines (98.5%),
+  and `novo pkg publish` accepts the two markers.
+- A `Tick` starts near zero in a new process rather than at any
+  machine-wide origin, so two readings are comparable only within one
+  process.  That is what the type promises and what `std.time.Mono`
+  already does, and the suite asserts nothing across processes.
+
 ## 0.0.5 — 2026-09-28
 
 The dependency ranges move to the dependencies' current releases.  A

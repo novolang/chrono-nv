@@ -22,7 +22,76 @@
 // reading, and turning one into the other is exactly the step that
 // needs to know which wall.
 
+use std.time
+use civil
 use zone
+
+// ── The arithmetic underneath ────────────────────────────────────────
+
+// The largest year `calendar-nv` represents, either side of year 1.
+const MAX_YEAR = 999999999
+
+// A bound on the seconds from the epoch that keeps a day number and
+// its product with 86,400 inside an `Int`.
+//
+// The year a `CivilDate` can hold is about 3.16e16 seconds from the
+// epoch and this is that rounded up, so nothing the calendar can name
+// is refused here and everything past it is refused before the
+// multiplication that would trap.
+const MAX_UNIX_SECS = 31557600000000000
+
+// Integer division toward negative infinity.
+//
+// `/` truncates toward zero and splitting an instant into a whole day
+// and a second of that day needs the floor, so the correction is the
+// sign of the remainder.
+fn floor_div(a: Int, b: Int) -> Int
+    let q = a / b
+    if a % b < 0
+        q - 1
+    else
+        q
+
+// A Unix instant as a whole day number and the second of that day.
+//
+// The day number is the calendar's own unit, and a negative instant is
+// the day before the epoch rather than the one after it.
+fn split_secs(secs: Int) -> (Int, Int)
+    let days = floor_div(secs, 86400)
+    (days, secs - days * 86400)
+
+// A second count and a nanosecond field with the pair `CivilTime`
+// takes: the nanosecond inside `0 ..= 999_999_999` and any carry moved
+// into the seconds.
+//
+// A caller's nanosecond arrives from anywhere, including a negative
+// one, and this is the one place the two fields are made to agree.
+fn normalise(secs: Int, nanos: Int) -> (Int, Int)
+    let extra = floor_div(nanos, 1000000000)
+    (secs + extra, nanos - extra * 1000000000)
+
+// The civil date-time a Unix instant reads as at an offset.
+//
+// Every field handed to `time_of` is built from the second of the day
+// and a nanosecond already normalised, so the construction cannot be
+// refused and the unwrap is a statement about these numbers rather
+// than a hope.
+fn civil_at(secs: Int, nanos: Int, at: Offset) -> CivilDateTime
+    let (days, rem) = split_secs(secs + at.minutes * 60)
+    let when = civil.time_of(rem / 3600, rem % 3600 / 60, rem % 60, nanos)!
+    civil.datetime(civil.date_from_epoch_day(days), when)
+
+// What the host's wall clock reads, as seconds since the epoch and the
+// nanosecond within that second.
+//
+// `Zoned` carries both fields with no arithmetic between them, which
+// is what keeps the nanosecond the clock was read with; `time.now()`
+// is the same instant as a `Float` and loses it.
+fn wall_seconds() -> (Int, Int) [time]
+    let z = Zoned.now(Tz.utc())
+    let secs = z.unix_secs()
+    let nanos = z.nanos()
+    (secs, nanos)
 
 // The civil date-time at UTC, right now.
 //
@@ -34,7 +103,7 @@ use zone
 //     iso8601.format_rfc3339(clock.now_utc(), 0)
 // ```
 pub fn now_utc() -> CivilDateTime [time]
-    todo("chrono-nv.now_utc")
+    now(zone.utc())
 
 // The civil date-time at a given offset, right now.
 //
@@ -51,7 +120,8 @@ pub fn now_utc() -> CivilDateTime [time]
 //     clock.now(at)
 // ```
 pub fn now(at: Offset) -> CivilDateTime [time]
-    todo("chrono-nv.now")
+    let (secs, nanos) = wall_seconds()
+    civil_at(secs, nanos, at)
 
 // The civil date-time as the host's own clock reads it, right now.
 //
@@ -68,7 +138,9 @@ pub fn now(at: Offset) -> CivilDateTime [time]
 //         Err(_) => println("no local zone")
 // ```
 pub fn now_local() -> Result<CivilDateTime, ChronoError> [time, io]
-    todo("chrono-nv.now_local")
+    match zone.local()
+        Ok(at) => Ok(now(at))
+        Err(e) => Err(e)
 
 // Today's date at UTC.
 //
@@ -84,7 +156,7 @@ pub fn now_local() -> Result<CivilDateTime, ChronoError> [time, io]
 //     iso8601.format_date(clock.today_utc())
 // ```
 pub fn today_utc() -> CivilDate [time]
-    todo("chrono-nv.today_utc")
+    today(zone.utc())
 
 // Today's date at a given offset.
 //
@@ -101,7 +173,8 @@ pub fn today_utc() -> CivilDate [time]
 //     clock.today(at)
 // ```
 pub fn today(at: Offset) -> CivilDate [time]
-    todo("chrono-nv.today")
+    let dt = now(at)
+    dt.date
 
 // Today's date as the host's own clock reads it.
 //
@@ -114,7 +187,9 @@ pub fn today(at: Offset) -> CivilDate [time]
 //         Err(_) => println("no local zone")
 // ```
 pub fn today_local() -> Result<CivilDate, ChronoError> [time, io]
-    todo("chrono-nv.today_local")
+    match zone.local()
+        Ok(at) => Ok(today(at))
+        Err(e) => Err(e)
 
 // Whole seconds since 1970-01-01T00:00:00Z, negative before it.
 //
@@ -128,7 +203,8 @@ pub fn today_local() -> Result<CivilDate, ChronoError> [time, io]
 //     println("${clock.unix_seconds()}")
 // ```
 pub fn unix_seconds() -> Int [time]
-    todo("chrono-nv.unix_seconds")
+    let (secs, _) = wall_seconds()
+    secs
 
 // Seconds since the epoch, and the nanosecond within that second.
 //
@@ -146,7 +222,7 @@ pub fn unix_seconds() -> Int [time]
 //     println("${s}.${n}")
 // ```
 pub fn unix_nanos() -> (Int, Int) [time]
-    todo("chrono-nv.unix_nanos")
+    wall_seconds()
 
 // The civil date-time a Unix instant reads as at a given offset.
 //
@@ -167,7 +243,17 @@ pub fn unix_nanos() -> (Int, Int) [time]
 //         Err(_) => println("out of range")
 // ```
 pub fn from_unix(secs: Int, nanos: Int, at: Offset) -> Result<CivilDateTime, ChronoError>
-    todo("chrono-nv.from_unix")
+    // An offset moves the reading by at most eighteen hours, and an
+    // `Int` of seconds reaches millions of times further than a
+    // `CivilDate` does, so the instant is bounded before the calendar
+    // sees it and the year is checked after.
+    if secs > MAX_UNIX_SECS or secs < -MAX_UNIX_SECS
+        return Err(Calendar(CalError.Overflow("the instant is outside the years a CivilDate holds")))
+    let (s, n) = normalise(secs, nanos)
+    let dt = civil_at(s, n, at)
+    if dt.date.year > MAX_YEAR or dt.date.year < -MAX_YEAR
+        return Err(Calendar(CalError.Overflow("the instant is outside the years a CivilDate holds")))
+    Ok(dt)
 
 // The Unix instant a civil date-time names when read at a given
 // offset: seconds since the epoch, and the nanosecond within.
@@ -187,4 +273,11 @@ pub fn from_unix(secs: Int, nanos: Int, at: Offset) -> Result<CivilDateTime, Chr
 //         Err(_)     => println("out of range")
 // ```
 pub fn to_unix(dt: CivilDateTime, at: Offset) -> Result<(Int, Int), ChronoError>
-    todo("chrono-nv.to_unix")
+    // The calendar's own year range is the bound the seconds are
+    // checked against, because `epoch_day` multiplies a day number by
+    // 86,400 and a year outside that range has no such guarantee.
+    if dt.date.year > MAX_YEAR or dt.date.year < -MAX_YEAR
+        return Err(Calendar(CalError.Overflow("the year is outside the range a CivilDate holds")))
+    let day = civil.epoch_day(dt.date)
+    let secs = day * 86400 + dt.time.hour * 3600 + dt.time.minute * 60 + dt.time.second
+    Ok((secs - at.minutes * 60, dt.time.nano))

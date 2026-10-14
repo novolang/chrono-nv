@@ -1,9 +1,6 @@
 // mono_tests.nv — the API suite for the monotonic clock, the
 // deadlines built on it, and the bridge to `std.time`.
 //
-// RED ON PURPOSE: every body is a `todo()`.  Run with `--isolate` for
-// one verdict per `@test`.
-//
 // WHAT THE MONOTONIC CASES CAN AND CANNOT ASSERT.  A test cannot pin a
 // reading; what it can pin is the PROPERTY the module exists for —
 // that two readings are ordered, that an elapsed time is never
@@ -41,7 +38,7 @@ fn test_between_is_pure_and_signed() [io, time]
     test.case("later minus earlier is not negative")
     let a = mono.read()
     let b = mono.read()
-    test.assert(span.is_negative(mono.between(a, b)) == false)
+    test.assert(not span.is_negative(mono.between(a, b)))
 
     test.case("and the other way round is")
     test.assert(span.is_negative(mono.between(b, a)) or span.as_seconds(mono.between(b, a)) == 0)
@@ -55,7 +52,7 @@ fn test_elapsed_is_never_negative() [io, time]
     test.case("elapsed")
     let start = mono.read()
     let d = mono.elapsed(start)
-    test.assert(span.is_negative(d) == false)
+    test.assert(not span.is_negative(d))
 
 @test
 fn test_sleep_waits_at_least_as_long_as_asked() [io, time]
@@ -63,7 +60,7 @@ fn test_sleep_waits_at_least_as_long_as_asked() [io, time]
     let start = mono.read()
     mono.sleep(span.milliseconds(20))
     let waited = mono.elapsed(start)
-    test.assert(span.is_negative(waited) == false)
+    test.assert(not span.is_negative(waited))
 
     test.case("a zero or negative length returns rather than erroring")
     mono.sleep(span.seconds(0))
@@ -79,8 +76,8 @@ fn test_a_deadline_is_a_question_a_loop_asks() [io, time]
     test.case("and one five seconds out has not")
     match timer.deadline_in(span.seconds(5))
         Ok(later) =>
-            test.assert(timer.expired(later) == false)
-            test.assert(span.is_negative(timer.remaining(later)) == false)
+            test.assert(not timer.expired(later))
+            test.assert(not span.is_negative(timer.remaining(later)))
         Err(_)    => test.fail("five seconds fits")
 
     test.case("a zero budget is an expired deadline, not an error")
@@ -102,14 +99,14 @@ fn test_the_stopwatch_carries_its_label() [io, time]
     test.case("lap returns the timer to take the next one from")
     let (t2, first) = timer.lap(t)
     test.assert(t2.label == "index rebuild")
-    test.assert(span.is_negative(first) == false)
+    test.assert(not span.is_negative(first))
 
     test.case("a second lap measures from the first, not the start")
     let (_, second) = timer.lap(t2)
-    test.assert(span.is_negative(second) == false)
+    test.assert(not span.is_negative(second))
 
     test.case("stop is the total, laps ignored")
-    test.assert(span.is_negative(timer.stop(t2)) == false)
+    test.assert(not span.is_negative(timer.stop(t2)))
 
 @test
 fn test_the_bridge_to_std_time_durations() [io]
