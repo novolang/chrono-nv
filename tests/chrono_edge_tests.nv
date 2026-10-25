@@ -24,6 +24,7 @@ use timer
 use bridge
 use span
 use civil
+use chronoerror
 
 @test
 fn test_every_reason_prints_a_sentence() [io]

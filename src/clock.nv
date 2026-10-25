@@ -25,6 +25,7 @@
 use std.time
 use civil
 use zone
+use chronoerror
 
 // ── The arithmetic underneath ────────────────────────────────────────
 
