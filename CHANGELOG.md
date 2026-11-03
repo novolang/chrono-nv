@@ -48,6 +48,12 @@ verdicts do not depend on the machine it runs on.
   process.  That is what the type promises and what `std.time.Mono`
   already does, and the suite asserts nothing across processes.
 
+This release requires novo 0.23.0 or later.
+
+## 0.0.6 — 2026-10-25
+
+A file that names a sibling module's type, function or constant now has the `use` line for that module (E2033, E2003).  No signature and no behaviour changed.
+
 ## 0.0.5 — 2026-09-28
 
 The dependency ranges move to the dependencies' current releases.  A
