@@ -73,12 +73,15 @@ fn test_a_deadline_is_a_question_a_loop_asks() [io, time]
     let d = timer.deadline_at(mono.read())
     test.assert(timer.expired(d))
 
-    test.case("and one five seconds out has not")
-    match timer.deadline_in(span.seconds(5))
+    test.case("and one an hour out has not")
+    // An hour rather than a few seconds: a loaded host can hold a test
+    // for longer than a short budget, and this case asks about the
+    // sign of the answer, not about how fast the host is.
+    match timer.deadline_in(span.hours(1))
         Ok(later) =>
             test.assert(not timer.expired(later))
             test.assert(not span.is_negative(timer.remaining(later)))
-        Err(_)    => test.fail("five seconds fits")
+        Err(_)    => test.fail("an hour fits")
 
     test.case("a zero budget is an expired deadline, not an error")
     match timer.deadline_in(span.seconds(0))
@@ -86,9 +89,12 @@ fn test_a_deadline_is_a_question_a_loop_asks() [io, time]
         Err(_)  => test.fail("no budget left is a deadline, not a failure")
 
     test.case("remaining goes negative rather than clamping")
-    let past = timer.deadline_at(mono.read())
-    test.assert(span.is_negative(timer.remaining(past))
-                or span.as_seconds(timer.remaining(past)) == 0)
+    // A deadline at the origin of the clock is behind every reading the
+    // process can take, so the answer is negative whatever the
+    // scheduler does.  A deadline AT a fresh reading was asked twice
+    // for two different readings, and the pair could straddle zero.
+    let past = timer.deadline_at(mono.Tick { nanos: 0 })
+    test.assert(span.is_negative(timer.remaining(past)))
 
 @test
 fn test_the_stopwatch_carries_its_label() [io, time]

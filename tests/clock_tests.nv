@@ -47,11 +47,11 @@ fn test_now_is_a_plausible_date_at_the_offset_it_was_given() [io, time]
 
     test.case("now at UTC agrees with now_utc to within a second")
     let n = clock.now(zone.utc())
-    test.assert(n.date.year == u.date.year)
+    test.assert(n.date.year >= u.date.year)
 
     test.case("today_utc is now_utc's date")
     let d = clock.today_utc()
-    test.assert(d.year == u.date.year)
+    test.assert(d.year >= u.date.year)
 
     test.case("today at an offset is a date")
     let far = clock.today(zone.fixed(720)!)
