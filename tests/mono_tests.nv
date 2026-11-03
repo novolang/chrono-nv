@@ -162,3 +162,15 @@ fn test_an_overflow_says_so_rather_than_wrapping() [io]
     match chronoerror.calendar_cause(ChronoError.Overflow("microseconds"))
         Some(_) => test.fail("that reason is about a representation")
         None    => test.assert(true)
+
+@test
+fn test_between_borrows_a_second_when_the_later_nanos_are_smaller()
+    // Two readings that straddle a second boundary: the later one has the
+    // smaller sub-second field, so the difference borrows one second.
+    // Real readings take this branch only when the clock ticks past a
+    // second between them, so the case builds the readings itself and
+    // pins the branch without depending on timing.
+    test.case("1.9 s to 2.1 s is 0.2 s")
+    let d = mono.between(mono.Tick { nanos: 1900000000 }, mono.Tick { nanos: 2100000000 })
+    test.assert(d.secs == 0)
+    test.assert(d.nanos == 200000000)
